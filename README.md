@@ -1,2 +1,3 @@
-# NordVPN-Ansible
-Connect to the best server via an Ansible script
+# nordvpn
+
+Download's NordVPN's OPENVPN and sets nmcli up.

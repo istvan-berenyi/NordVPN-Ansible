@@ -1,0 +1,88 @@
+---
+
+- name: Get Current Protection status
+  uri:
+    url: https://nordvpn.com/wp-admin/admin-ajax.php?action=get_user_info_data
+    return_content: yes
+  register: check_status
+
+- name: You are NOT Protected by NordVPN :(
+  debug:
+    msg: 
+      - You are currently NOT protected by NordVPN.
+      - "Checking for the fastest server at your location: {{ check_status.json.location }}"
+      - "Your current IP is: {{ check_status.json.ip }}"
+  when: check_status.json.status == false
+
+- name: You are Protected by NordVPN! :)
+  debug:
+    msg: You are Protected by NordVPN no further action needed!
+  when: check_status.json.status == true
+
+- name: Start setting up connection
+  block:
+
+  - name: Download the OPENVPN packages from NordVPN
+    get_url:
+      url: https://downloads.nordcdn.com/configs/archives/servers/ovpn.zip
+      dest: "{{ openvpn_dir }}/ovpn.zip"
+
+  - name: Unpack the file
+    unarchive:
+      src: "{{ openvpn_dir }}/ovpn.zip"
+      dest: "{{ openvpn_dir }}"
+
+  - name: url lookup splits lines by default
+    uri:
+      url: https://nordvpn.com/wp-admin/admin-ajax.php?action=servers_recommendations
+      return_content: yes
+    register: server_rec
+
+  - debug:
+      msg:
+        - "Recommended Server: {{ server_rec.json[0].hostname }}"
+        - "IP address of the Server: {{ server_rec.json[0].station }} located in: {{ server_rec.json[0].name }}"
+        - "You have chosen to use {{ openvpn_protocol | upper }} protocol to connect"
+
+  - name: Check if the profile has been added previously
+    command: "nmcli connection show {{ server_rec.json[0].hostname }}.{{ openvpn_protocol | lower }}"
+    register: check_profile
+    ignore_errors: true
+
+  - name: Import the server's profile into NetworkManager
+    command: "nmcli connection import type openvpn file {{ openvpn_dir }}/ovpn_{{ openvpn_protocol | lower }}/{{ server_rec.json[0].hostname }}.{{ openvpn_protocol | lower }}.ovpn"
+    register: ovpn_import
+    failed_when: "'successfully' not in ovpn_import.stdout"
+    when: "'Error:' in check_profile.stderr"
+
+  - name: Add Login details to the VPN profile
+    command: "nmcli connection modify {{ server_rec.json[0].hostname }}.{{ openvpn_protocol | lower }} vpn.user-name {{ nordvpn_username }} vpn.secrets password={{ nordvpn_password }}"
+    register: openvpn_profile_login
+    failed_when: "'Error:' in openvpn_profile_login.stderr"
+
+  - name: Configure DNS server in VPN profile
+    command: "nmcli connection modify {{ server_rec.json[0].hostname }}.{{ openvpn_protocol | lower }} ipv4.dns 103.86.96.100,103.86.99.100"
+    register: openvpn_profile_dns
+    failed_when: "'Error:' in openvpn_profile_dns.stderr"
+
+  - name: Connect to VPN
+    command: "nmcli connection up {{ server_rec.json[0].hostname }}.{{ openvpn_protocol | lower }}"
+    register: openvpn_connection_up
+    failed_when: "'Error:' in openvpn_connection_up.stderr"
+
+  - name: Check if the machine is secured with VPN
+    uri:
+      url: https://nordvpn.com/wp-admin/admin-ajax.php?action=get_user_info_data
+      return_content: yes
+    register: check_vpn_connection
+    when: "'Error:' not in openvpn_connection_up.stderr"
+
+  - name: You are now Protected by NordVPN
+    debug:
+      msg:
+      - You are now protected by NordVPN.
+      - "Your Server's location: {{ check_vpn_connection.json.location }}" 
+      - "Your current IP is: {{ check_vpn_connection.json.ip }}"
+    when: "check_vpn_connection.json.status == true and 'Error:' not in openvpn_connection_up.stderr"
+
+  when: check_status.json.status == false

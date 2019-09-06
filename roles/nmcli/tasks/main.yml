@@ -1,0 +1,13 @@
+---
+
+- name: make sure NMCLI and OpenVPN plugin is installed
+  yum:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - NetworkManager
+    - nm-connection-editor
+    - NetworkManager-openvpn
+    - NetworkManager-openvpn-gnome
+
+  become: true 

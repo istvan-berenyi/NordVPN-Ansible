@@ -1,0 +1,10 @@
+---
+
+nordvpn_username: user@name
+nordvpn_password: Your_Password
+
+# Where the OVPN profiles will be stored
+openvpn_dir: '/tmp'
+
+# Choose TCP or UDP protocol
+openvpn_protocol: udp
